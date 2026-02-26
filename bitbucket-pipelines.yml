@@ -1,0 +1,17 @@
+image: node:18
+
+pipelines:
+  default:
+    - step:
+        name: Run Playwright with Allure
+        caches:
+          - node
+        script:
+          - apt-get update
+          - apt-get install -y openjdk-17-jre-headless
+          - npm install
+          - npx playwright install --with-deps
+          - npx playwright test || true
+          - npx allure generate ./allure-results --clean -o ./allure-report
+        artifacts:
+          - allure-report/**
