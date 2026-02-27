@@ -1,9 +1,6 @@
 pipeline {
   agent any
 
-  // If you use NodeJS plugin, uncomment and configure "Node18" in Global Tool Configuration.
-  // tools { nodejs 'Node18' }
-
   options {
     timestamps()
     ansiColor('xterm')
@@ -13,12 +10,11 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        // If this Jenkinsfile is in the same repo, "checkout scm" is enough.
         checkout scm
       }
     }
 
-    stage('Verify Node and NPM') {
+    stage('Verify Node & NPM') {
       steps {
         bat 'node -v'
         bat 'npm -v'
@@ -27,30 +23,29 @@ pipeline {
 
     stage('Install Dependencies') {
       steps {
-        // Prefer reproducible installs if you have package-lock.json
+        // Reproducible install if you have package-lock.json
         bat 'if exist package-lock.json (npm ci) else (npm install)'
-        // Ensure Playwright Test is installed (safe to run every time)
+        // Ensure Playwright Test is present
         bat 'npm ls @playwright/test || npm i -D @playwright/test'
       }
     }
 
     stage('Install Playwright Browsers') {
       steps {
-        // For Windows, do not use --with-deps
+        // For Windows, no --with-deps
         bat 'npx playwright install'
       }
     }
 
     stage('Run Playwright Tests') {
       steps {
-        // If you configured reporters in playwright.config, you can drop the --reporter option.
+        // If reporters are already set in playwright.config, you can drop --reporter here
         bat 'npx playwright test --reporter=list,junit'
       }
       post {
         always {
-          // Adjust to your JUnit output path if set in playwright.config
+          // Adjust the test results path if your config writes elsewhere
           junit testResults: 'test-results/**/*.xml', allowEmptyResults: true
-          // Archive HTML report if you generate it
           archiveArtifacts artifacts: 'playwright-report/**', fingerprint: true, onlyIfSuccessful: false
         }
       }
@@ -73,7 +68,7 @@ pipeline {
 
   post {
     success { echo 'Playwright tests passed.' }
-    failure { echo 'Playwright tests failed. Check console and reports.' }
+    failure { echo 'Playwright tests failed. Check console & reports.' }
     always  { echo "Build completed at: ${new Date()}" }
   }
 }
