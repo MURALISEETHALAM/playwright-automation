@@ -2,18 +2,18 @@ pipeline {
   agent any
 
   tools {
-    nodejs 'Node18' // Must exist in Manage Jenkins -> Global Tool Configuration -> NodeJS
+    nodejs 'Node18' // Ensure this name exists in Manage Jenkins -> Global Tool Configuration -> NodeJS
   }
 
   options {
     timestamps()
     ansiColor('xterm')
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    skipDefaultCheckout() // prevent implicit SCM checkout since we do an explicit one
+    skipDefaultCheckout() // prevent implicit checkout since we do an explicit checkout
   }
 
   environment {
-    // Optional: cache Playwright browsers under workspace to speed up
+    // Optional: cache Playwright browsers to speed up builds on the agent
     // PLAYWRIGHT_BROWSERS_PATH = "${env.WORKSPACE}\\.cache\\ms-playwright"
   }
 
@@ -24,7 +24,7 @@ pipeline {
           branches: [[name: '*/main']],
           userRemoteConfigs: [[
             url: 'https://github.com/MURALISEETHALAM/playwright-automation.git',
-            credentialsId: 'github-https-credentials' // Username + PAT (not SSH)
+            credentialsId: 'github-https-credentials' // Username + PAT
           ]]
         ])
       }
@@ -32,7 +32,6 @@ pipeline {
 
     stage('Verify Node & NPM') {
       steps {
-        // Windows-friendly; 'sh' would fail
         bat 'node -v'
         bat 'npm -v'
       }
@@ -40,29 +39,24 @@ pipeline {
 
     stage('Install Dependencies') {
       steps {
-        // Clean reproducible install
         bat 'npm ci'
-
-        // Install Playwright browsers (Windows: do NOT use --with-deps)
+        // On Windows, don't use --with-deps (Linux-only)
         bat 'npx playwright install'
       }
     }
 
     stage('Run Tests') {
       steps {
-        // Ensure your Playwright config enables Allure reporter
-        // (reporter: [['line'], ['allure-playwright']]) or pass via CLI below
-        // Example using config reporters:
+        // Ensure allure reporter is enabled in playwright.config.ts:
+        // reporter: [['line'], ['allure-playwright']]
+        // Or pass via CLI: bat 'npx playwright test --reporter=line,allure-playwright'
         bat 'npx playwright test'
-
-        // If you prefer CLI reporters instead of config, use:
-        // bat 'npx playwright test --reporter=line,allure-playwright'
       }
     }
 
     stage('Allure Report') {
       steps {
-        // Publishes 'allure-results' if present
+        // Requires Allure Jenkins plugin + Allure Commandline configured in Global Tool Configuration
         allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
       }
     }
@@ -70,10 +64,8 @@ pipeline {
 
   post {
     always {
-      // Archive useful outputs. Allow empty to avoid build failures if folder missing.
       archiveArtifacts artifacts: 'allure-results/**, test-results/**, playwright-report/**', allowEmptyArchive: true
-
-      // If you also output JUnit XML (e.g., via junit reporter or conversion), publish it:
+      // Uncomment if you also generate JUnit XML files:
       // junit 'test-results/**/*.xml'
     }
     failure {
@@ -81,4 +73,3 @@ pipeline {
     }
   }
 }
-``
