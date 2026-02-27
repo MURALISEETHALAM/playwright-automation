@@ -2,20 +2,20 @@ pipeline {
   agent any
 
   tools {
-    nodejs 'Node18' // Must exist under Manage Jenkins -> Global Tool Configuration -> NodeJS
+    nodejs 'Node18' // Ensure this is defined in Manage Jenkins -> Global Tool Configuration -> NodeJS
   }
 
   options {
     timestamps()
     ansiColor('xterm')
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    // skipDefaultCheckout() // optional; if you enable this, keep the explicit checkout stage
+    // skipDefaultCheckout() // leave commented for now to keep default behavior simple
   }
 
   stages {
     stage('Checkout') {
       steps {
-        // Uses your HTTPS + PAT credentials
+        // Explicit checkout ensures the workspace has the code
         checkout([$class: 'GitSCM',
           branches: [[name: '*/main']],
           userRemoteConfigs: [[
@@ -36,23 +36,21 @@ pipeline {
     stage('Install Dependencies') {
       steps {
         bat 'npm ci'
-        // On Windows, do NOT use --with-deps
-        bat 'npx playwright install'
+        bat 'npx playwright install' // no --with-deps on Windows
       }
     }
 
     stage('Run Tests') {
       steps {
-        // Ensure allure reporter is enabled in playwright.config.ts:
+        // Ensure allure-playwright is enabled in your playwright.config.ts
         // reporter: [['line'], ['allure-playwright']]
-        // Or pass via CLI: bat 'npx playwright test --reporter=line,allure-playwright'
         bat 'npx playwright test'
       }
     }
 
     stage('Allure Report') {
       steps {
-        // Requires Allure Jenkins Plugin and Allure Commandline tool configured
+        // Requires Allure Jenkins plugin + Allure Commandline configured
         allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
       }
     }
@@ -61,11 +59,6 @@ pipeline {
   post {
     always {
       archiveArtifacts artifacts: 'allure-results/**, test-results/**, playwright-report/**', allowEmptyArchive: true
-      // If you also emit JUnit XML, uncomment:
-      // junit 'test-results/**/*.xml'
-    }
-    failure {
-      echo 'Build failed. Check logs and archived artifacts.'
     }
   }
 }
