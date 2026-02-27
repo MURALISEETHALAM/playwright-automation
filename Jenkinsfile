@@ -1,5 +1,5 @@
 pipeline {
-  agent any
+  agent { label 'windows' }  // <-- Use the label you set in Step 1. If you didn't set one, use: agent any
   options { timestamps() }
 
   stages {
@@ -12,25 +12,18 @@ pipeline {
       }
     }
 
-    stage('Install Node Modules') {
+    stage('Install Dependencies') {
       steps {
         powershell '''
           Write-Host "Installing dependencies..."
-          if (Test-Path package-lock.json) {
-            npm ci
-          } else {
-            npm install
-          }
+          if (Test-Path package-lock.json) { npm ci } else { npm install }
         '''
       }
     }
 
     stage('Install Playwright Browsers') {
       steps {
-        powershell '''
-          Write-Host "Installing Playwright browsers..."
-          npx playwright install
-        '''
+        powershell 'npx playwright install'
       }
     }
 
@@ -51,7 +44,6 @@ pipeline {
     stage('Generate Allure Report') {
       steps {
         powershell '''
-          Write-Host "Generating Allure report..."
           npx allure generate ./allure-results --clean -o ./allure-report
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Allure generation had issues but continuing."
@@ -65,13 +57,12 @@ pipeline {
   post {
     always {
       echo "Publishing Allure Results..."
-
+      // Requires Allure Jenkins Plugin installed & configured (Manage Jenkins → Plugins / Tools)
       allure([
         includeProperties: false,
         jdk: '',
         results: [[path: 'allure-results']]
       ])
-
       archiveArtifacts artifacts: 'allure-report/**', fingerprint: true, allowEmptyArchive: true
     }
   }
