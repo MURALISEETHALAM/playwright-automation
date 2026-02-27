@@ -1,10 +1,16 @@
 pipeline {
   agent any
 
+  // Set proxy here if needed (uncomment and fill)
   environment {
-    # If you need proxy, set here, e.g.:
-    # HTTP_PROXY = 'http://proxy:8080'
-    # HTTPS_PROXY = 'http://proxy:8080'
+    // HTTP_PROXY = 'http://proxy-host:8080'
+    // HTTPS_PROXY = 'http://proxy-host:8080'
+    // NO_PROXY = 'localhost,127.0.0.1,.yourcompany.local'
+    // npm will also honor these env vars
+  }
+
+  options {
+    timestamps()
   }
 
   stages {
@@ -16,13 +22,35 @@ pipeline {
 
     stage('Install JDK 17 (if needed)') {
       when {
-        expression { return sh(script: 'java -version >/dev/null 2>&1 || echo NOJAVA', returnStatus: true) != 0 }
+        // Check if java exists; if not, install openjdk-17
+        expression { sh(script: 'java -version >/dev/null 2>&1 || echo NOJAVA', returnStatus: true) != 0 }
       }
       steps {
         sh '''
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jre-headless
+          set -eux
+          if ! command -v sudo >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y openjdk-17-jre-headless
+          else
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jre-headless
+          fi
           java -version
+        '''
+      }
+    }
+
+    stage('Configure npm proxy (optional)') {
+      when {
+        expression { return env.HTTP_PROXY || env.HTTPS_PROXY }
+      }
+      steps {
+        sh '''
+          set -eux
+          if [ -n "${HTTP_PROXY:-}" ]; then npm config set proxy "$HTTP_PROXY"; fi
+          if [ -n "${HTTPS_PROXY:-}" ]; then npm config set https-proxy "$HTTPS_PROXY"; fi
+          npm config get proxy || true
+          npm config get https-proxy || true
         '''
       }
     }
@@ -30,7 +58,13 @@ pipeline {
     stage('Install Dependencies') {
       steps {
         sh '''
-          npm ci || npm install
+          set -eux
+          # Prefer reproducible installs
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
         '''
       }
     }
@@ -43,22 +77,26 @@ pipeline {
 
     stage('Run Playwright Tests (do not fail build)') {
       steps {
-        // Run tests but keep pipeline green like `|| true`
+        // Keep pipeline green regardless of test failures (like `|| true`)
         sh '''
           set +e
           npx playwright test
-          echo "Exit code: $?"
+          EXIT_CODE=$?
+          echo "Playwright exit code: $EXIT_CODE"
           set -e
         '''
       }
     }
 
-    stage('Generate Allure Report') {
+    stage('Generate Allure Report (static)') {
       steps {
-        // Use local dev dependency: allure-commandline (optional)
-        // If not installed, you can do: npm i -D allure-commandline --no-save
+        // Ensure allure-commandline is available; if not in devDeps, this npx will still try
         sh '''
-          npx allure generate ./allure-results --clean -o ./allure-report || true
+          set +e
+          npx allure generate ./allure-results --clean -o ./allure-report
+          # Do not fail if generation returns non-zero
+          true
+          set -e
         '''
       }
     }
@@ -66,14 +104,15 @@ pipeline {
 
   post {
     always {
-      // Publish via Allure Plugin (reads allure-results, not the generated site)
+      // If you installed the Allure Jenkins Plugin and configured Allure Commandline (Manage Jenkins -> Tools),
+      // this will publish the results directory and attach a nice report link to the build.
       allure([
         includeProperties: false,
         jdk: '',
         results: [[path: 'allure-results']]
       ])
 
-      // Also archive the static site (optional)
+      // Also archive the pre-generated static site (optional)
       archiveArtifacts artifacts: 'allure-report/**', fingerprint: true, allowEmptyArchive: true
     }
   }
